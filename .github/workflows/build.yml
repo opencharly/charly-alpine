@@ -66,6 +66,7 @@ jobs:
         env:
           CHARLY_PROJECT_DIR: ${{ github.workspace }}
         run: |
+          rm -rf repo
           for variant in default full minimal; do
             for arch in amd64 arm64; do
               charly generate-packages \
@@ -84,9 +85,31 @@ jobs:
       - name: Assemble + sign the apk index
         run: |
           docker run --rm -v "${{ github.workspace }}:/ws:rw" alpine:latest sh -c '
+            set -e
             apk add --no-cache alpine-sdk
+            # apk index verifies the package signatures against the keyring, so
+            # the public key must be installed BEFORE indexing — a missing key
+            # makes `apk index` exit 99 UNTRUSTED and silently produce no index.
+            cp /ws/charly.rsa.pub /etc/apk/keys/charly.rsa.pub
             for arch in amd64 arm64; do
+              case "$arch" in
+                amd64) apkarch=x86_64 ;;
+                arm64) apkarch=aarch64 ;;
+              esac
+              mkdir -p /ws/repo/$arch/$apkarch
               cd /ws/repo/$arch
+              # nFPM names the .apk <name>_<version>_<arch>.apk, but apk derives
+              # the package filename from the index as <name>-<version>.apk —
+              # rename to the apk convention or apk reports "package mentioned
+              # in index not found" (EAPKSTALEINDEX) at install time.
+              for f in *_$apkarch.apk; do
+                [ -e "$f" ] || continue
+                base="${f%_$apkarch.apk}"
+                name="${base%_*}"
+                ver="${base##*_}"
+                mv "$f" "$apkarch/$name-$ver.apk"
+              done
+              cd /ws/repo/$arch/$apkarch
               apk index -o APKINDEX.tar.gz *.apk
               abuild-sign -k /ws/charly.rsa APKINDEX.tar.gz
             done
@@ -95,7 +118,11 @@ jobs:
       - name: Create stable copies
         run: |
           for arch in amd64 arm64; do
-            newest=$(ls repo/$arch/charly-*.apk | grep -v minimal | grep -v full | sort -V | tail -1)
+            case "$arch" in
+              amd64) apkarch=x86_64 ;;
+              arm64) apkarch=aarch64 ;;
+            esac
+            newest=$(ls repo/$arch/$apkarch/charly-*.apk | grep -v minimal | grep -v full | sort -V | tail -1)
             cp "$newest" repo/$arch/charly-$arch.apk
           done
 
@@ -103,8 +130,12 @@ jobs:
         run: |
           docker run --rm -v "${{ github.workspace }}:/ws:ro" alpine:latest sh -c '
             set -e
-            wget -O /etc/apk/keys/charly.rsa.pub /ws/charly.rsa.pub
-            apk add --repository file:///ws/repo/amd64 charly
+            cp /ws/charly.rsa.pub /etc/apk/keys/charly.rsa.pub
+            # Append the charly repo — replacing /etc/apk/repositories breaks
+            # dependency resolution (the deps come from Alpine main/community).
+            echo "file:///ws/repo/amd64" >> /etc/apk/repositories
+            apk update
+            apk add charly
             test "$(charly version)" = "$VERSION" || { echo "version mismatch: $(charly version) != $VERSION"; exit 1; }
             cd /tmp && charly doctor
           '
