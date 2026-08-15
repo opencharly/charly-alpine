@@ -128,7 +128,7 @@ jobs:
 
       - name: Install-test
         run: |
-          docker run --rm -v "${{ github.workspace }}:/ws:ro" alpine:latest sh -c '
+          docker run --rm -e VERSION="$VERSION" -v "${{ github.workspace }}:/ws:ro" alpine:latest sh -c '
             set -e
             cp /ws/charly.rsa.pub /etc/apk/keys/charly.rsa.pub
             # Append the charly repo — replacing /etc/apk/repositories breaks
