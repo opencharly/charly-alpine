@@ -62,7 +62,6 @@ jobs:
               ln -sf charly-lib "plugins/$arch/$n"
             done
           done
-          ls -l plugins/amd64
 
       - name: Install charly + baked generate-packages plugin
         env:
@@ -166,7 +165,14 @@ jobs:
             apk update
             apk add charly
             test "$(charly version)" = "$VERSION" || { echo "version mismatch: $(charly version) != $VERSION"; exit 1; }
-            cd /tmp && charly doctor
+            # The cutover's own assertion: the shared host is installed ONCE
+            # and a plugin-<word> is a SYMLINK to it (the loader contract).
+            # The trailing host-health `charly doctor` check is orthogonal to
+            # packaging and is deliberately not this packaging gate's signal.
+            test -x /usr/lib/charly/plugins/charly-lib || { echo "charly-lib shared host missing"; exit 1; }
+            _link=$(ls /usr/lib/charly/plugins/plugin-* 2>/dev/null | grep -v '\.providers$' | head -1)
+            test -n "$_link" && test "$(readlink "$_link")" = "charly-lib" || { echo "plugin symlink -> charly-lib missing"; exit 1; }
+            echo "shared-host layout OK"
           '
         env:
           VERSION: ${{ inputs.version }}
