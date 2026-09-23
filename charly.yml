@@ -23,11 +23,25 @@ defaults:
         max_mb: 128
 
 # sudo-nopasswd — grants the uid-1000 account passwordless sudo, for a check bed
-# that must drive a native package manager IN-CONTAINER. A charly box runs as
-# uid 1000 (WriteBootstrap has no root branch) and `run_as:` on a check step is
-# not honoured by the check executor, so an in-container `apk add` has no other
-# elevation path. Mirrors the sudoers rule /charly-coder:sshd installs, without
-# pulling in an sshd service.
+# that must drive a native package manager IN-CONTAINER.
+#
+# This is a documented WORKAROUND for a product gap, not a design choice. A
+# charly box runs as uid 1000 (WriteBootstrap has no root branch), and the check
+# executor does NOT honour `run_as:` on a check step: the build/install timeline
+# resolves op.RunAs through ResolveUserSpec (host_build_construct_step.go ->
+# stepConstructCtx.RunAsUser), but the check-runner path never reads it. So an
+# in-container `apk add` has no elevation path until the check executor honours
+# `run_as` on check steps — the owning fix is in the compiled-in `command:check`
+# plugin (opencharly/plugin-check), which owns every check-run mode body. WHEN
+# THAT LANDS THIS CANDY IS DELETED and the bed's steps carry `run_as: root`.
+#
+# R3: this grant and the one the sshd candy writes (/charly-coder:sshd,
+# candy/sshd in opencharly/pod-sshd) implement the same rule from two repos. The
+# sshd grant is a side effect of provisioning SSH; this candy is the focused
+# grant the bed needs WITHOUT an SSH daemon, so composing sshd here would pull an
+# unrelated service into a minimal Alpine bed. A single shared candy both repos
+# depend on is a cross-repo cutover (pod-sshd would have to compose it), which is
+# why this phase carries two copies rather than one.
 sudo-nopasswd:
     candy:
         version: 2026.229.0900
