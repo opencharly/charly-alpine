@@ -22,18 +22,21 @@ defaults:
         auto: false
         max_mb: 128
 
-# sudo-nopasswd — grants the uid-1000 account passwordless sudo, for a check bed
-# that must drive a native package manager IN-CONTAINER.
+# sudo-nopasswd — installs sudo and grants the uid-1000 account passwordless
+# sudo, for a check bed that must drive a native package manager IN-CONTAINER.
 #
-# This is a documented WORKAROUND for a product gap, not a design choice. A
-# charly box runs as uid 1000 (WriteBootstrap has no root branch), and the check
-# executor does NOT honour `run_as:` on a check step: the build/install timeline
-# resolves op.RunAs through ResolveUserSpec (host_build_construct_step.go ->
-# stepConstructCtx.RunAsUser), but the check-runner path never reads it. So an
-# in-container `apk add` has no elevation path until the check executor honours
-# `run_as` on check steps — the owning fix is in the compiled-in `command:check`
-# plugin (opencharly/plugin-check), which owns every check-run mode body. WHEN
-# THAT LANDS THIS CANDY IS DELETED and the bed's steps carry `run_as: root`.
+# A charly box runs as uid 1000 (WriteBootstrap has no root branch), and a check
+# probe runs as that deploy user and elevates EXPLICITLY with `sudo` — the check
+# executor has no implicit escalation (spec.CheckExecutor.RunCapture documents
+# "No root escalation; callers add sudo") and `run_as:` is an INSTALL/BUILD
+# modifier, not a check modifier: the CUE schema groups it under
+# "install/build modifiers" (spec/schema/_common.cue), only deploykit's
+# build/install emit reads op.RunAs, and the check skill's shared-modifier table
+# omits it. So a check that must `apk add` needs an elevation path, and Alpine
+# ships no `sudo`. The sibling repo beds (check-arch/fedora/debian/ubuntu-repo)
+# get passwordless sudo for free from their cloud images' cloud-init; a pod has
+# no cloud-init, so this candy provides the equivalent — the pod analogue of
+# `cloud_init.package: [sudo]` plus the NOPASSWD drop-in.
 #
 # R3: this grant and the one the sshd candy writes (/charly-coder:sshd,
 # candy/sshd in opencharly/pod-sshd) implement the same rule from two repos. The
@@ -79,6 +82,29 @@ sudo-nopasswd:
               # the NOPASSWD rule actually grants elevation.
               command: sudo -n stat -c '%a' /etc/sudoers.d/charly-user
 
+# alpine-repo-tools — the repo-install toolchain the check-alpine-repo bed drives
+# in-container, BAKED into the image so its check steps add no runtime OS
+# dependency (R9). The bed's first check step fetches the published charly RSA
+# key over HTTPS; curl does that. Declaring it here installs it at image-build
+# time; the check step no longer provisions it. (A box node cannot carry
+# `package:` — the CUE schema rejects it — so the declaration lives on a candy
+# composed into the box, exactly like sudo-nopasswd.)
+alpine-repo-tools:
+    candy:
+        version: 2026.268.2137
+        description: |-
+            Bakes curl into the check-alpine-repo bed's Alpine image so its
+            in-container repo-install check steps add no runtime OS dependency.
+        distro:
+            alpine:
+                package:
+                    - curl
+        plan:
+            - check: curl is installed
+              id: alpine-repo-tools-curl
+              exit_status: 0
+              command: curl --version
+
 # alpine-repo-box — the check-alpine-repo bed's pod workload. A minimal Alpine
 # base box (a raw registry image cannot be a pod's `image:` — the check-bed
 # runner resolves it as a box name) whose OCI labels the pod deploy reads to
@@ -86,12 +112,13 @@ sudo-nopasswd:
 # run in-container.
 alpine-repo-box:
     candy:
-        version: 2026.225.1508
+        version: 2026.268.2137
         base: docker.io/library/alpine:3.24
         description: |-
             Minimal Alpine base box — the check-alpine-repo bed's pod workload.
         candy:
             - sudo-nopasswd
+            - alpine-repo-tools
         build:
             - apk
         distro:
@@ -118,7 +145,6 @@ check-alpine-repo:
               context:
                 - runtime
               command: |
-                sudo apk add --no-cache curl &&
                 sudo curl -fsSL -o /etc/apk/keys/charly.rsa.pub https://opencharly.github.io/charly-alpine/charly.rsa.pub &&
                 echo 'https://opencharly.github.io/charly-alpine/amd64' | sudo tee -a /etc/apk/repositories >/dev/null &&
                 grep -q '^https://opencharly.github.io/charly-alpine/amd64$' /etc/apk/repositories
