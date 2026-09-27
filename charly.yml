@@ -36,15 +36,9 @@ defaults:
 # ships no `sudo`. The sibling repo beds (check-arch/fedora/debian/ubuntu-repo)
 # get passwordless sudo for free from their cloud images' cloud-init; a pod has
 # no cloud-init, so this candy provides the equivalent — the pod analogue of
-# `cloud_init.package: [sudo]` plus the NOPASSWD drop-in.
-#
-# R3: this grant and the one the sshd candy writes (/charly-coder:sshd,
-# candy/sshd in opencharly/pod-sshd) implement the same rule from two repos. The
-# sshd grant is a side effect of provisioning SSH; this candy is the focused
-# grant the bed needs WITHOUT an SSH daemon, so composing sshd here would pull an
-# unrelated service into a minimal Alpine bed. A single shared candy both repos
-# depend on is a cross-repo cutover (pod-sshd would have to compose it), which is
-# why this phase carries two copies rather than one.
+# `cloud_init.package: [sudo]` plus the NOPASSWD drop-in. Kept self-contained: a
+# one-line sudoers drop-in so the minimal Alpine bed needs no SSH daemon (the
+# SSH-provisioning candy would pull an unrelated service into the bed).
 sudo-nopasswd:
     candy:
         version: 2026.229.0900
