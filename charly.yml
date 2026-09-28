@@ -9,7 +9,6 @@
 # asserts the installed binary's version equals the version the package manager
 # recorded. The bed was relocated here from opencharly/charly's charly.yml —
 # the artifact owner is the repo that publishes the repo.
-version: 2026.261.1747
 repo: github.com/opencharly/charly-alpine
 defaults:
     platform:
@@ -41,7 +40,6 @@ defaults:
 # SSH-provisioning candy would pull an unrelated service into the bed).
 sudo-nopasswd:
     candy:
-        version: 2026.229.0900
         description: |-
             Installs sudo and grants the uid-1000 account passwordless sudo via
             /etc/sudoers.d/charly-user, for a check bed that must drive a native
@@ -85,7 +83,6 @@ sudo-nopasswd:
 # composed into the box, exactly like sudo-nopasswd.)
 alpine-repo-tools:
     candy:
-        version: 2026.268.2137
         description: |-
             Bakes curl into the check-alpine-repo bed's Alpine image so its
             in-container repo-install check steps add no runtime OS dependency.
@@ -106,7 +103,6 @@ alpine-repo-tools:
 # run in-container.
 alpine-repo-box:
     candy:
-        version: 2026.268.2137
         base: docker.io/library/alpine:3.24
         description: |-
             Minimal Alpine base box — the check-alpine-repo bed's pod workload.
